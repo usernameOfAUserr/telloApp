@@ -6,20 +6,26 @@ import 'package:flutter/widgets.dart';
 import '../models/connection_status.dart';
 import '../models/rc_command.dart';
 import '../models/tello_telemetry.dart';
+import '../models/tello_trick.dart';
 import '../services/tello_udp_client.dart';
+import '../services/tello_video_bridge.dart';
 
 class TelloController extends ChangeNotifier with WidgetsBindingObserver {
-  TelloController({TelloUdpClient? client})
-      : _client = client ?? TelloUdpClient() {
+  TelloController({TelloUdpClient? client, TelloVideoBridge? videoBridge})
+      : _client = client ?? TelloUdpClient(),
+        _videoBridge = videoBridge ?? TelloVideoBridge() {
     WidgetsBinding.instance.addObserver(this);
   }
 
   final TelloUdpClient _client;
+  final TelloVideoBridge _videoBridge;
   TelloConnectionStatus status = TelloConnectionStatus.disconnected;
   TelloTelemetry telemetry = const TelloTelemetry();
   RcCommand rcCommand = const RcCommand();
   String? errorMessage;
   String? lastResponse;
+  bool isVideoActive = false;
+  bool isVideoBusy = false;
 
   Timer? _rcTimer;
   Timer? _connectionWatchdog;
@@ -60,6 +66,7 @@ class TelloController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> disconnect() async {
+    await stopVideo();
     if (isConnected) await _sendNeutralRc();
     _cancelRuntime();
     await _telemetrySubscription?.cancel();
@@ -72,6 +79,49 @@ class TelloController extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> takeOff() => _runFlightCommand('takeoff');
   Future<void> land() => _runFlightCommand('land');
   Future<void> stop() => _runFlightCommand('stop');
+  Future<void> performTrick(TelloTrick trick) =>
+      _runFlightCommand(trick.command);
+
+  Future<void> startVideo() async {
+    if (!isConnected || isVideoActive || isVideoBusy) return;
+    isVideoBusy = true;
+    errorMessage = null;
+    notifyListeners();
+    try {
+      final response = await _client.sendCommand('streamon');
+      if (response.toLowerCase() != 'ok') {
+        throw StateError('Tello rejected video stream: $response');
+      }
+      await _videoBridge.start();
+      isVideoActive = true;
+    } catch (error) {
+      errorMessage = 'Videostream konnte nicht gestartet werden: $error';
+      try {
+        await _client.sendCommand('streamoff');
+      } catch (_) {
+        // Preserve the original video startup error.
+      }
+    } finally {
+      isVideoBusy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> stopVideo() async {
+    if ((!isVideoActive && !isVideoBusy) || !isConnected) return;
+    isVideoBusy = true;
+    notifyListeners();
+    try {
+      await _videoBridge.stop();
+      await _client.sendCommand('streamoff');
+    } catch (error) {
+      errorMessage = 'Videostream konnte nicht beendet werden: $error';
+    } finally {
+      isVideoActive = false;
+      isVideoBusy = false;
+      notifyListeners();
+    }
+  }
 
   Future<void> emergency() async {
     if (!isConnected) return;
@@ -194,6 +244,7 @@ class TelloController extends ChangeNotifier with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _cancelRuntime();
     _telemetrySubscription?.cancel();
+    if (isVideoActive) _videoBridge.stop();
     _client.close();
     super.dispose();
   }

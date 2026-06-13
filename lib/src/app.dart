@@ -12,14 +12,21 @@ class TelloApp extends StatelessWidget {
       title: 'Tello EDU Controller',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xff19a7ce),
+          seedColor: const Color(0xff39ff88),
           brightness: Brightness.dark,
+          surface: const Color(0xff07150d),
         ),
-        scaffoldBackgroundColor: const Color(0xff08131f),
+        scaffoldBackgroundColor: const Color(0xff020805),
         cardTheme: const CardThemeData(
-          color: Color(0xff122235),
+          color: Color(0xff07150d),
           margin: EdgeInsets.zero,
+          shape: RoundedRectangleBorder(
+            side: BorderSide(color: Color(0x6639ff88)),
+            borderRadius: BorderRadius.all(Radius.circular(4)),
+          ),
         ),
+        fontFamily: 'monospace',
+        dividerColor: const Color(0x5539ff88),
         useMaterial3: true,
       ),
       home: const ControlScreen(),

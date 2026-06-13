@@ -1,168 +1,400 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../controllers/tello_controller.dart';
 import '../models/connection_status.dart';
+import '../models/tello_trick.dart';
 import '../providers/tello_provider.dart';
 import '../widgets/telemetry_grid.dart';
+import '../widgets/tello_video_view.dart';
 import '../widgets/virtual_joystick.dart';
 
-class ControlScreen extends ConsumerWidget {
+class ControlScreen extends ConsumerStatefulWidget {
   const ControlScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ControlScreen> createState() => _ControlScreenState();
+}
+
+class _ControlScreenState extends ConsumerState<ControlScreen> {
+  int _section = 0;
+
+  @override
+  void dispose() {
+    SystemChrome.setPreferredOrientations(const [
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+    super.dispose();
+  }
+
+  Future<void> _toggleVideo() async {
+    final controller = ref.read(telloControllerProvider);
+    if (controller.isVideoActive) {
+      await controller.stopVideo();
+      await SystemChrome.setPreferredOrientations(const [
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+      ]);
+    } else {
+      await controller.startVideo();
+      if (controller.isVideoActive) {
+        await SystemChrome.setPreferredOrientations(const [
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final controller = ref.watch(telloControllerProvider);
-    final connected = controller.isConnected;
+    if (controller.isVideoActive) {
+      return _VideoHud(controller: controller, onClose: _toggleVideo);
+    }
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Tello EDU Controller'),
+        backgroundColor: Colors.transparent,
+        title: const _GlitchTitle(),
         actions: [
           Padding(
-            padding: const EdgeInsets.only(right: 16),
+            padding: const EdgeInsets.only(right: 14),
             child: _ConnectionBadge(status: controller.status),
           ),
         ],
       ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              FilledButton.icon(
-                onPressed: controller.status == TelloConnectionStatus.connecting
-                    ? null
-                    : connected
-                        ? controller.disconnect
-                        : controller.connect,
-                icon: controller.status == TelloConnectionStatus.connecting
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(connected ? Icons.link_off : Icons.wifi),
-                label: Text(connected ? 'Verbindung trennen' : 'Mit Tello verbinden'),
-              ),
-              if (controller.errorMessage case final message?) ...[
-                const SizedBox(height: 12),
-                Card(
-                  color: Theme.of(context).colorScheme.errorContainer,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Text(message),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                alignment: WrapAlignment.center,
-                children: [
-                  _CommandButton(
-                    label: 'Starten',
-                    icon: Icons.flight_takeoff,
-                    onPressed: connected ? controller.takeOff : null,
-                  ),
-                  _CommandButton(
-                    label: 'Landen',
-                    icon: Icons.flight_land,
-                    onPressed: connected ? controller.land : null,
-                  ),
-                  _CommandButton(
-                    label: 'Schweben',
-                    icon: Icons.pause_circle_outline,
-                    onPressed: connected ? controller.stop : null,
-                  ),
-                  _CommandButton(
-                    label: 'NOT-AUS',
-                    icon: Icons.warning_amber,
-                    danger: true,
-                    onPressed: connected
-                        ? () => _confirmEmergency(context, controller.emergency)
-                        : null,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              IgnorePointer(
-                ignoring: !connected,
-                child: Opacity(
-                  opacity: connected ? 1 : 0.4,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: VirtualJoystick(
-                          label: 'Höhe & Drehen',
-                          horizontalLabels: const ('Links', 'Rechts'),
-                          verticalLabels: const ('Hoch', 'Runter'),
-                          onChanged: controller.setLeftJoystick,
-                          onReleased: controller.releaseLeftJoystick,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: VirtualJoystick(
-                          label: 'Flugrichtung',
-                          horizontalLabels: const ('Links', 'Rechts'),
-                          verticalLabels: const ('Vor', 'Zurück'),
-                          onChanged: controller.setRightJoystick,
-                          onReleased: controller.releaseRightJoystick,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              Text('Telemetrie', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 12),
-              TelemetryGrid(telemetry: controller.telemetry),
-              const SizedBox(height: 12),
-              Text(
-                'RC: ${controller.rcCommand.wireValue}',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.labelMedium,
-              ),
-            ],
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _section,
+        onDestinationSelected: (value) => setState(() => _section = value),
+        backgroundColor: const Color(0xff041009),
+        indicatorColor: const Color(0x4439ff88),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.gamepad_outlined),
+            selectedIcon: Icon(Icons.gamepad),
+            label: 'CONTROL',
           ),
+          NavigationDestination(
+            icon: Icon(Icons.auto_awesome_outlined),
+            selectedIcon: Icon(Icons.auto_awesome),
+            label: 'TRICKS',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.monitor_heart_outlined),
+            selectedIcon: Icon(Icons.monitor_heart),
+            label: 'DATA',
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: Stack(
+          children: [
+            const Positioned.fill(child: _GridBackground()),
+            IndexedStack(
+              index: _section,
+              children: [
+                _ControlPanel(controller: controller, onVideo: _toggleVideo),
+                _TricksPanel(controller: controller),
+                _DataPanel(controller: controller),
+              ],
+            ),
+          ],
         ),
       ),
     );
   }
+}
 
-  Future<void> _confirmEmergency(
-    BuildContext context,
-    Future<void> Function() emergency,
-  ) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Not-Aus auslösen?'),
-        content: const Text(
-          'Die Motoren stoppen sofort. Die Drohne kann unkontrolliert fallen.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Abbrechen'),
+class _ControlPanel extends StatelessWidget {
+  const _ControlPanel({required this.controller, required this.onVideo});
+
+  final TelloController controller;
+  final VoidCallback onVideo;
+
+  @override
+  Widget build(BuildContext context) {
+    final connected = controller.isConnected;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _HudPanel(
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.radar, color: Color(0xff39ff88)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        connected
+                            ? 'TELLO LINK // ONLINE'
+                            : 'TELLO LINK // STANDBY',
+                        style: const TextStyle(
+                          color: Color(0xff8affb0),
+                          letterSpacing: 1.8,
+                        ),
+                      ),
+                    ),
+                    Switch(
+                      value: connected,
+                      onChanged: controller.status ==
+                              TelloConnectionStatus.connecting
+                          ? null
+                          : (_) => connected
+                              ? controller.disconnect()
+                              : controller.connect(),
+                    ),
+                  ],
+                ),
+                if (controller.errorMessage case final String message?) ...[
+                  const Divider(),
+                  Text(message, style: const TextStyle(color: Colors.orange)),
+                ],
+              ],
+            ),
           ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('NOT-AUS'),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: connected && !controller.isVideoBusy ? onVideo : null,
+            icon: controller.isVideoBusy
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.videocam_outlined),
+            label: const Text('LIVE FEED INITIALISIEREN'),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
+            children: [
+              _HudButton(
+                label: 'TAKE OFF',
+                icon: Icons.flight_takeoff,
+                onPressed: connected ? controller.takeOff : null,
+              ),
+              _HudButton(
+                label: 'LAND',
+                icon: Icons.flight_land,
+                onPressed: connected ? controller.land : null,
+              ),
+              _HudButton(
+                label: 'HOVER',
+                icon: Icons.pause,
+                onPressed: connected ? controller.stop : null,
+              ),
+              _HudButton(
+                label: 'EMERGENCY',
+                icon: Icons.warning_amber,
+                danger: true,
+                onPressed: connected ? controller.emergency : null,
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          IgnorePointer(
+            ignoring: !connected,
+            child: Opacity(
+              opacity: connected ? 1 : 0.3,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: VirtualJoystick(
+                      label: 'ALT // YAW',
+                      horizontalLabels: const ('YAW−', 'YAW+'),
+                      verticalLabels: const ('UP', 'DOWN'),
+                      onChanged: controller.setLeftJoystick,
+                      onReleased: controller.releaseLeftJoystick,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: VirtualJoystick(
+                      label: 'VECTOR',
+                      horizontalLabels: const ('LEFT', 'RIGHT'),
+                      verticalLabels: const ('FWD', 'BACK'),
+                      onChanged: controller.setRightJoystick,
+                      onReleased: controller.releaseRightJoystick,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            '> ${controller.rcCommand.wireValue}',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Color(0xff39ff88)),
           ),
         ],
       ),
     );
-    if (confirmed == true) await emergency();
   }
 }
 
-class _CommandButton extends StatelessWidget {
-  const _CommandButton({
+class _TricksPanel extends StatelessWidget {
+  const _TricksPanel({required this.controller});
+
+  final TelloController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const Text(
+          'FLIGHT ROUTINES',
+          style: TextStyle(
+            color: Color(0xff39ff88),
+            fontSize: 20,
+            letterSpacing: 3,
+          ),
+        ),
+        const SizedBox(height: 18),
+        for (final trick in TelloTrick.values)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: _HudPanel(
+              child: ListTile(
+                leading: const Icon(Icons.blur_circular),
+                title: Text(trick.label.toUpperCase()),
+                subtitle: Text('CMD > ${trick.command}'),
+                trailing: const Icon(Icons.play_arrow),
+                onTap: controller.isConnected
+                    ? () => controller.performTrick(trick)
+                    : null,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _DataPanel extends StatelessWidget {
+  const _DataPanel({required this.controller});
+
+  final TelloController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'SENSOR MATRIX',
+            style: TextStyle(
+              color: Color(0xff39ff88),
+              fontSize: 20,
+              letterSpacing: 3,
+            ),
+          ),
+          const SizedBox(height: 14),
+          TelemetryGrid(telemetry: controller.telemetry),
+        ],
+      ),
+    );
+  }
+}
+
+class _VideoHud extends StatelessWidget {
+  const _VideoHud({required this.controller, required this.onClose});
+
+  final TelloController controller;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final telemetry = controller.telemetry;
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          const TelloVideoView(),
+          IgnorePointer(
+            child: CustomPaint(painter: _CrosshairPainter()),
+          ),
+          Positioned(
+            left: 16,
+            top: 16,
+            child: _VideoMetric(
+              label: 'BAT',
+              value: '${telemetry.battery ?? '--'}%',
+            ),
+          ),
+          Positioned(
+            left: 16,
+            bottom: 16,
+            child: _VideoMetric(
+              label: 'ALT',
+              value: '${telemetry.height ?? '--'} CM',
+            ),
+          ),
+          Positioned(
+            right: 16,
+            bottom: 16,
+            child: _VideoMetric(
+              label: 'YAW',
+              value: '${telemetry.yaw ?? '--'}°',
+            ),
+          ),
+          Positioned(
+            right: 16,
+            top: 16,
+            child: Row(
+              children: [
+                const Text(
+                  '● LIVE',
+                  style: TextStyle(color: Color(0xff39ff88)),
+                ),
+                const SizedBox(width: 12),
+                IconButton.filledTonal(
+                  onPressed: onClose,
+                  icon: const Icon(Icons.close_fullscreen),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HudPanel extends StatelessWidget {
+  const _HudPanel({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xe607150d),
+        border: Border.all(color: const Color(0x8839ff88)),
+        boxShadow: const [
+          BoxShadow(color: Color(0x2239ff88), blurRadius: 14),
+        ],
+      ),
+      child: Padding(padding: const EdgeInsets.all(10), child: child),
+    );
+  }
+}
+
+class _HudButton extends StatelessWidget {
+  const _HudButton({
     required this.label,
     required this.icon,
     required this.onPressed,
@@ -176,13 +408,13 @@ class _CommandButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FilledButton.tonalIcon(
-      style: danger
-          ? FilledButton.styleFrom(
-              backgroundColor: Colors.red.shade800,
-              foregroundColor: Colors.white,
-            )
-          : null,
+    return OutlinedButton.icon(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: danger ? Colors.redAccent : const Color(0xff8affb0),
+        side: BorderSide(
+          color: danger ? Colors.redAccent : const Color(0x8839ff88),
+        ),
+      ),
       onPressed: onPressed,
       icon: Icon(icon),
       label: Text(label),
@@ -198,17 +430,112 @@ class _ConnectionBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (color, label) = switch (status) {
-      TelloConnectionStatus.disconnected => (Colors.grey, 'Getrennt'),
-      TelloConnectionStatus.connecting => (Colors.orange, 'Verbinden …'),
-      TelloConnectionStatus.connected => (Colors.green, 'Verbunden'),
-      TelloConnectionStatus.error => (Colors.red, 'Fehler'),
+      TelloConnectionStatus.disconnected => (Colors.grey, 'OFFLINE'),
+      TelloConnectionStatus.connecting => (Colors.orange, 'LINKING'),
+      TelloConnectionStatus.connected => (const Color(0xff39ff88), 'ONLINE'),
+      TelloConnectionStatus.error => (Colors.redAccent, 'ERROR'),
     };
     return Row(
       children: [
-        Icon(Icons.circle, size: 10, color: color),
+        Icon(Icons.circle, size: 9, color: color),
         const SizedBox(width: 6),
-        Text(label),
+        Text(label, style: TextStyle(color: color, fontSize: 11)),
       ],
+    );
+  }
+}
+
+class _GlitchTitle extends StatelessWidget {
+  const _GlitchTitle();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'TELLO//OS',
+          style: TextStyle(
+            color: Color(0xff39ff88),
+            fontWeight: FontWeight.bold,
+            letterSpacing: 3,
+          ),
+        ),
+        Text(
+          'EDU FLIGHT TERMINAL',
+          style: TextStyle(color: Color(0xff68a77c), fontSize: 8),
+        ),
+      ],
+    );
+  }
+}
+
+class _GridBackground extends StatelessWidget {
+  const _GridBackground();
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(painter: _GridPainter());
+  }
+}
+
+class _GridPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0x1539ff88)
+      ..strokeWidth = 1;
+    for (double x = 0; x < size.width; x += 28) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    }
+    for (double y = 0; y < size.height; y += 28) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _CrosshairPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xaa39ff88)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    final center = Offset(size.width / 2, size.height / 2);
+    canvas.drawCircle(center, 34, paint);
+    canvas.drawLine(center - const Offset(60, 0), center - const Offset(15, 0), paint);
+    canvas.drawLine(center + const Offset(15, 0), center + const Offset(60, 0), paint);
+    canvas.drawLine(center - const Offset(0, 60), center - const Offset(0, 15), paint);
+    canvas.drawLine(center + const Offset(0, 15), center + const Offset(0, 60), paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _VideoMetric extends StatelessWidget {
+  const _VideoMetric({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.black54,
+        border: Border.all(color: const Color(0x8839ff88)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        child: Text(
+          '$label // $value',
+          style: const TextStyle(color: Color(0xff8affb0)),
+        ),
+      ),
     );
   }
 }

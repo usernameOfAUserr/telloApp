@@ -1,12 +1,14 @@
 # Tello EDU Controller
 
 Android-first Flutter app for controlling a DJI Tello EDU over its local Wi-Fi.
-This first phase deliberately excludes the H.264 video stream.
+The default command interface runs in portrait mode. Starting the live feed
+switches the app to a landscape video HUD and decodes the Tello H.264 stream
+natively on Android.
 
 ## Features
 
 - SDK connection to `192.168.10.1:8889` and automatic `command` handshake
-- Takeoff, landing, hover/stop, and confirmed emergency motor stop
+- Takeoff, landing, hover/stop, and emergency motor stop
 - Two multitouch-friendly virtual joysticks
 - `rc a b c d` commands every 50 ms, including neutral commands on release
 - Telemetry listener on UDP port `8890`
@@ -15,6 +17,10 @@ This first phase deliberately excludes the H.264 video stream.
 - Lifecycle safety: neutral controls when the app leaves the foreground
 - Command timeout, connection state, telemetry watchdog, and visible errors
 - Riverpod-based separation between UI and the central controller
+- Native Android H.264 live view from UDP port `11111` using `MediaCodec`
+- Automatic portrait/landscape switching based on live-video state
+- One-tap flip and 360-degree rotation routines
+- Dark-green cyber/HUD interface with dedicated control, tricks, and data tabs
 
 ## Prerequisites
 
@@ -49,6 +55,8 @@ flutter run
    because it has no internet access.
 3. Start the app and tap **Mit Tello verbinden**.
 4. Verify all control directions at low altitude in a clear indoor area.
+5. Tap **LIVE FEED INITIALISIEREN** to send `streamon`, rotate to landscape,
+   and open the native Android video surface.
 
 The unit tests do not require a drone. Hardware validation must verify command
 responses, axis directions, packet loss, latency, app background behavior, and
@@ -75,8 +83,12 @@ lib/src/
 └── widgets/      Joysticks and telemetry cards
 ```
 
+The native Android video path is implemented in
+`android/app/src/main/kotlin/de/example/telloapp/TelloVideoView.kt`. It
+assembles the Tello UDP packets into H.264 access units and renders decoded
+frames directly to an Android `SurfaceView`.
+
 ## Next phase
 
-The video feature should bind UDP port `11111`, start it with `streamon`, decode
-H.264 with Android MediaCodec, and expose rendered frames to Flutter. Photo and
-MP4 gallery export should be added only after stream stability is established.
+Photo capture and MP4 gallery export should be added after the live stream has
+been validated across the target Android devices.
