@@ -10,7 +10,7 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        videoController = TelloVideoController()
+        videoController = TelloVideoController(applicationContext)
         val registry: PlatformViewRegistry = flutterEngine.platformViewsController.registry
         registry.registerViewFactory(
             "de.example.telloapp/video-view",
@@ -29,6 +29,21 @@ class MainActivity : FlutterActivity() {
                 "stop" -> {
                     videoController.stop()
                     result.success(null)
+                }
+                "capturePhoto" -> videoController.capturePhoto(
+                    onSuccess = result::success,
+                    onError = { result.error("capture_failed", it, null) },
+                )
+                "startRecording" -> {
+                    videoController.startRecording()
+                    result.success("Aufnahme gestartet")
+                }
+                "stopRecording" -> {
+                    try {
+                        result.success(videoController.stopRecording())
+                    } catch (error: Exception) {
+                        result.error("recording_failed", error.message, null)
+                    }
                 }
                 else -> result.notImplemented()
             }

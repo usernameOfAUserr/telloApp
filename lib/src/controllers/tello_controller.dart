@@ -26,6 +26,9 @@ class TelloController extends ChangeNotifier with WidgetsBindingObserver {
   String? lastResponse;
   bool isVideoActive = false;
   bool isVideoBusy = false;
+  bool isRecording = false;
+  bool isTrickRunning = false;
+  String? mediaMessage;
 
   Timer? _rcTimer;
   Timer? _connectionWatchdog;
@@ -79,8 +82,23 @@ class TelloController extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> takeOff() => _runFlightCommand('takeoff');
   Future<void> land() => _runFlightCommand('land');
   Future<void> stop() => _runFlightCommand('stop');
-  Future<void> performTrick(TelloTrick trick) =>
-      _runFlightCommand(trick.command);
+  Future<void> performTrick(TelloTrick trick, {int repetitions = 1}) async {
+    if (!isConnected || isTrickRunning) return;
+    isTrickRunning = true;
+    errorMessage = null;
+    notifyListeners();
+    try {
+      for (var repetition = 0; repetition < repetitions; repetition++) {
+        for (final command in trick.commands) {
+          await _runFlightCommand(command);
+          await Future<void>.delayed(const Duration(milliseconds: 350));
+        }
+      }
+    } finally {
+      isTrickRunning = false;
+      notifyListeners();
+    }
+  }
 
   Future<void> startVideo() async {
     if (!isConnected || isVideoActive || isVideoBusy) return;
@@ -112,6 +130,7 @@ class TelloController extends ChangeNotifier with WidgetsBindingObserver {
     isVideoBusy = true;
     notifyListeners();
     try {
+      if (isRecording) await stopRecording();
       await _videoBridge.stop();
       await _client.sendCommand('streamoff');
     } catch (error) {
@@ -119,6 +138,47 @@ class TelloController extends ChangeNotifier with WidgetsBindingObserver {
     } finally {
       isVideoActive = false;
       isVideoBusy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> capturePhoto() async {
+    if (!isVideoActive) return;
+    try {
+      final path = await _videoBridge.capturePhoto();
+      mediaMessage = path == null ? 'Foto gespeichert' : 'Foto: $path';
+      notifyListeners();
+    } catch (error) {
+      errorMessage = 'Foto konnte nicht gespeichert werden: $error';
+      notifyListeners();
+    }
+  }
+
+  Future<void> toggleRecording() =>
+      isRecording ? stopRecording() : startRecording();
+
+  Future<void> startRecording() async {
+    if (!isVideoActive || isRecording) return;
+    try {
+      await _videoBridge.startRecording();
+      isRecording = true;
+      mediaMessage = 'Videoaufnahme läuft';
+      notifyListeners();
+    } catch (error) {
+      errorMessage = 'Videoaufnahme konnte nicht gestartet werden: $error';
+      notifyListeners();
+    }
+  }
+
+  Future<void> stopRecording() async {
+    if (!isRecording) return;
+    try {
+      final path = await _videoBridge.stopRecording();
+      mediaMessage = path == null ? 'Video gespeichert' : 'Video: $path';
+    } catch (error) {
+      errorMessage = 'Videoaufnahme konnte nicht gespeichert werden: $error';
+    } finally {
+      isRecording = false;
       notifyListeners();
     }
   }

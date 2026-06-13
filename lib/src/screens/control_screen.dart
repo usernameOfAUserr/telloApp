@@ -241,37 +241,108 @@ class _ControlPanel extends StatelessWidget {
   }
 }
 
-class _TricksPanel extends StatelessWidget {
+class _TricksPanel extends StatefulWidget {
   const _TricksPanel({required this.controller});
 
   final TelloController controller;
+
+  @override
+  State<_TricksPanel> createState() => _TricksPanelState();
+}
+
+class _TricksPanelState extends State<_TricksPanel> {
+  int repetitions = 1;
 
   @override
   Widget build(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const Text(
-          'FLIGHT ROUTINES',
-          style: TextStyle(
-            color: Color(0xff39ff88),
-            fontSize: 20,
-            letterSpacing: 3,
-          ),
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'FLIGHT ROUTINES',
+                style: TextStyle(
+                  color: Color(0xff39ff88),
+                  fontSize: 20,
+                  letterSpacing: 3,
+                ),
+              ),
+            ),
+            const Text('REPEAT  '),
+            DropdownButton<int>(
+              value: repetitions,
+              items: [
+                for (var count = 1; count <= 5; count++)
+                  DropdownMenuItem(value: count, child: Text('${count}×')),
+              ],
+              onChanged: widget.controller.isTrickRunning
+                  ? null
+                  : (value) => setState(() => repetitions = value ?? 1),
+            ),
+          ],
         ),
+        if (widget.controller.isTrickRunning) ...[
+          const SizedBox(height: 10),
+          const LinearProgressIndicator(),
+          const SizedBox(height: 4),
+          const Text(
+            'ROUTINE WIRD AUSGEFÜHRT',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Color(0xff39ff88), fontSize: 11),
+          ),
+        ],
         const SizedBox(height: 18),
         for (final trick in TelloTrick.values)
           Padding(
-            padding: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.only(bottom: 14),
             child: _HudPanel(
-              child: ListTile(
-                leading: const Icon(Icons.blur_circular),
-                title: Text(trick.label.toUpperCase()),
-                subtitle: Text('CMD > ${trick.command}'),
-                trailing: const Icon(Icons.play_arrow),
-                onTap: controller.isConnected
-                    ? () => controller.performTrick(trick)
-                    : null,
+              child: SizedBox(
+                height: 92,
+                child: InkWell(
+                  onTap: widget.controller.isConnected &&
+                          !widget.controller.isTrickRunning
+                      ? () => widget.controller.performTrick(
+                            trick,
+                            repetitions: repetitions,
+                          )
+                      : null,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.blur_circular, size: 38),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                trick.label.toUpperCase(),
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 1.3,
+                                ),
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                trick.subtitle,
+                                style: const TextStyle(
+                                  color: Color(0xff68a77c),
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.play_circle_fill, size: 42),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
@@ -361,12 +432,101 @@ class _VideoHud extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
                 IconButton.filledTonal(
+                  onPressed: controller.capturePhoto,
+                  tooltip: 'Foto aufnehmen',
+                  icon: const Icon(Icons.photo_camera),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filled(
+                  style: IconButton.styleFrom(
+                    backgroundColor:
+                        controller.isRecording ? Colors.red : null,
+                  ),
+                  onPressed: controller.toggleRecording,
+                  tooltip: controller.isRecording
+                      ? 'Aufnahme stoppen'
+                      : 'Video aufnehmen',
+                  icon: Icon(
+                    controller.isRecording ? Icons.stop : Icons.fiber_manual_record,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filledTonal(
                   onPressed: onClose,
                   icon: const Icon(Icons.close_fullscreen),
                 ),
               ],
             ),
           ),
+          Positioned(
+            left: 18,
+            bottom: 54,
+            width: 138,
+            child: Opacity(
+              opacity: 0.78,
+              child: VirtualJoystick(
+                label: 'ALT // YAW',
+                horizontalLabels: const ('Y−', 'Y+'),
+                verticalLabels: const ('UP', 'DN'),
+                onChanged: controller.setLeftJoystick,
+                onReleased: controller.releaseLeftJoystick,
+              ),
+            ),
+          ),
+          Positioned(
+            right: 18,
+            bottom: 54,
+            width: 138,
+            child: Opacity(
+              opacity: 0.78,
+              child: VirtualJoystick(
+                label: 'VECTOR',
+                horizontalLabels: const ('L', 'R'),
+                verticalLabels: const ('F', 'B'),
+                onChanged: controller.setRightJoystick,
+                onReleased: controller.releaseRightJoystick,
+              ),
+            ),
+          ),
+          Positioned(
+            left: 174,
+            right: 174,
+            bottom: 16,
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              children: [
+                _HudButton(
+                  label: 'TAKE OFF',
+                  icon: Icons.flight_takeoff,
+                  onPressed: controller.takeOff,
+                ),
+                _HudButton(
+                  label: 'HOVER',
+                  icon: Icons.pause,
+                  onPressed: controller.stop,
+                ),
+                _HudButton(
+                  label: 'LAND',
+                  icon: Icons.flight_land,
+                  onPressed: controller.land,
+                ),
+              ],
+            ),
+          ),
+          if (controller.mediaMessage case final String message?)
+            Positioned(
+              left: 174,
+              right: 174,
+              top: 18,
+              child: Text(
+                message,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Color(0xff8affb0)),
+              ),
+            ),
         ],
       ),
     );

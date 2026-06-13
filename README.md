@@ -20,7 +20,10 @@ natively on Android.
 - Native Android H.264 live view from UDP port `11111` using `MediaCodec`
 - Automatic portrait/landscape switching based on live-video state
 - One-tap flip and 360-degree rotation routines
+- Repeatable multi-command routines for circles, spirals, squares, and zigzags
 - Dark-green cyber/HUD interface with dedicated control, tricks, and data tabs
+- In-video dual-stick flight controls plus takeoff, hover, and landing
+- Photo capture and MP4 recording directly into the Android media gallery
 
 ## Prerequisites
 
@@ -57,6 +60,8 @@ flutter run
 4. Verify all control directions at low altitude in a clear indoor area.
 5. Tap **LIVE FEED INITIALISIEREN** to send `streamon`, rotate to landscape,
    and open the native Android video surface.
+6. Use the camera and record controls in the upper-right HUD. Photos are saved
+   under Pictures/Tello and MP4 recordings under Movies/Tello.
 
 The unit tests do not require a drone. Hardware validation must verify command
 responses, axis directions, packet loss, latency, app background behavior, and
@@ -90,5 +95,5 @@ frames directly to an Android `SurfaceView`.
 
 ## Next phase
 
-Photo capture and MP4 gallery export should be added after the live stream has
-been validated across the target Android devices.
+Device testing should validate MediaCodec compatibility, gallery export,
+recording playback, and the available clearance for multi-command routines.
